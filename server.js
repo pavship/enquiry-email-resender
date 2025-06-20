@@ -1,6 +1,7 @@
 import express from 'express'
 import multer from 'multer'
 import nodemailer from 'nodemailer'
+import querystring from 'querystring'
 import 'dotenv/config'
 
 // Required .env variables:
@@ -66,11 +67,28 @@ export async function sendEnquiryEmail({
 app.post('/enquiry', upload.array('attachments'), async (req, res) => {
   try {
     const { name, email, tel, message } = req.body
-    const attachments = (req.files || []).map(file => ({
-      filename: file.originalname,
-      content: file.buffer,
-      contentType: file.mimetype,
-    }))
+    const attachments = (req.files || []).map(file => {
+      // Decode filename to handle Cyrillic characters properly
+      let decodedFilename = file.originalname
+      try {
+        // Try to decode URL-encoded filename
+        decodedFilename = querystring.unescape(file.originalname)
+        // If it's still encoded, try Buffer decoding
+        if (decodedFilename.includes('%')) {
+          decodedFilename = Buffer.from(file.originalname, 'latin1').toString('utf8')
+        }
+      } catch (error) {
+        console.warn('Could not decode filename:', file.originalname, error.message)
+        // Fallback to original name if decoding fails
+        decodedFilename = file.originalname
+      }
+      
+      return {
+        filename: decodedFilename,
+        content: file.buffer,
+        contentType: file.mimetype,
+      }
+    })
     await sendEnquiryEmail({ name, email, tel, message, attachments })
     res.status(200).send('Enquiry email sent!')
   } catch (err) {
